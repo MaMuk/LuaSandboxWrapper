@@ -1,0 +1,24 @@
+# Dependencies
+/vendor/
+
+# PHPUnit / testing artifacts
+/.phpunit.cache/
+/phpunit.result.cache
+/coverage/
+/clover.xml
+
+# Build and runtime artifacts
+*.cache
+*.log
+*.tmp
+*.swp
+*.swo
+
+# IDE / editor settings
+/.idea/
+/.vscode/
+*.iml
+
+# OS files
+.DS_Store
+Thumbs.db
