@@ -13,6 +13,9 @@ Core classes:
 - `ExecutionResult`
 - `Conversion\ConversionMode`
 - `Conversion\TableShapeConverter`
+- `FunctionAccess\AccessMode`
+- `FunctionAccess\FunctionAccessConfig`
+- `FunctionAccess\CallbackAccessConfig`
 
 Output abstractions:
 - `Output\OutputSink`
@@ -23,6 +26,7 @@ Exceptions:
 - `Exception\LuaSandboxExtensionMissingException`
 - `Exception\LuaExecutionException`
 - `Exception\DataConversionException`
+- `Exception\FunctionAccessViolationException`
 - `Exception\LuaCompilationException`
 - `Exception\LuaRuntimeException`
 - `Exception\LuaFunctionNotFoundException`
@@ -136,6 +140,8 @@ public function __construct(
     bool $enablePrint = true,
     int $maxOutputBytes = 1048576,
     string $conversionMode = ConversionMode::STRICT,
+    FunctionAccessConfig $functionAccessConfig = new FunctionAccessConfig(),
+    CallbackAccessConfig $callbackAccessConfig = new CallbackAccessConfig(),
     OutputSink $outputSink = new StdoutOutputSink(),
 )
 ```
@@ -161,7 +167,21 @@ public function withCpuLimitSeconds(?float $cpuLimitSeconds): self
 public function withPrintEnabled(bool $enablePrint): self
 public function withMaxOutputBytes(int $maxOutputBytes): self
 public function withConversionMode(string $conversionMode): self
+public function withFunctionAccessConfig(FunctionAccessConfig $functionAccessConfig): self
+public function withCallbackAccessConfig(CallbackAccessConfig $callbackAccessConfig): self
 public function withOutputSink(OutputSink $outputSink): self
+```
+
+Convenience tuning helpers:
+
+```php
+public function blacklistLuaGlobals(array $symbols): self
+public function whitelistLuaGlobals(array $symbols): self
+public function blacklistLuaLibraries(array $libraries): self
+public function whitelistLuaLibraries(array $libraries): self
+public function rebindLuaGlobal(string $name, callable|string $target): self
+public function blacklistPhpCallbacks(array $callbacks): self
+public function whitelistPhpCallbacks(array $callbacks): self
 ```
 
 ### Getters
@@ -172,6 +192,8 @@ public function cpuLimitSeconds(): ?float
 public function printEnabled(): bool
 public function maxOutputBytes(): int
 public function conversionMode(): string
+public function functionAccessConfig(): FunctionAccessConfig
+public function callbackAccessConfig(): CallbackAccessConfig
 public function outputSink(): OutputSink
 ```
 
@@ -230,6 +252,41 @@ ConversionMode::STRICT
 ConversionMode::NATIVE_COMPATIBLE
 ```
 
+## `FunctionAccess\\AccessMode`
+
+File: `src/FunctionAccess/AccessMode.php`
+
+Constants:
+
+```php
+AccessMode::BLACKLIST
+AccessMode::WHITELIST
+```
+
+## `FunctionAccess\\FunctionAccessConfig`
+
+File: `src/FunctionAccess/FunctionAccessConfig.php`
+
+Purpose:
+- configure Lua runtime global/library overlays and rebindings.
+
+Core fields:
+- mode (`blacklist`|`whitelist`)
+- globals (symbol paths like `math.random` or `pairs`)
+- libraries (top-level tables like `math`, `string`)
+- rebindings (symbol => callable|string expression)
+
+## `FunctionAccess\\CallbackAccessConfig`
+
+File: `src/FunctionAccess/CallbackAccessConfig.php`
+
+Purpose:
+- control which PHP callbacks are exportable to Lua.
+
+Core fields:
+- mode (`blacklist`|`whitelist`)
+- callbacks (qualified names like `php.__wrapper_print`)
+
 ## Output API
 
 ### `OutputSink`
@@ -270,6 +327,20 @@ Use this when you want to inspect output programmatically.
 File: `src/Exception/LuaSandboxExtensionMissingException.php`
 
 Thrown when the wrapper is used in an environment where `ext-luasandbox` is not loaded.
+
+### `FunctionAccessViolationException`
+
+File: `src/Exception/FunctionAccessViolationException.php`
+
+Thrown when policy denies callback exposure.
+
+Additional metadata:
+
+```php
+public function symbol(): string
+public function source(): string
+public function mode(): string
+```
 
 ### `LuaExecutionException`
 

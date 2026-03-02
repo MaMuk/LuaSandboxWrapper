@@ -129,7 +129,27 @@ $config = SandboxConfig::defaults()
     ->withConversionMode(ConversionMode::NATIVE_COMPATIBLE);
 ```
 
-## 7. Run example scripts
+## 7. Tune function/callback exposure
+
+```php
+<?php
+
+$config = SandboxConfig::defaults()
+    ->blacklistLuaGlobals(['math.random'])
+    ->blacklistLuaLibraries(['os']);
+```
+
+Strict whitelist mode:
+
+```php
+<?php
+
+$config = SandboxConfig::defaults()
+    ->whitelistLuaGlobals(['pairs', 'ipairs'])
+    ->whitelistPhpCallbacks(['php.__wrapper_print']);
+```
+
+## 8. Run example scripts
 
 See `/examples`:
 

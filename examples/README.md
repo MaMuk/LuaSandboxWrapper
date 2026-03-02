@@ -18,3 +18,4 @@ Files:
 - `09_injected_sandbox_reuse.php`: injected `LuaSandbox` reuse behavior.
 - `11_conversion_strictness.php`: strict conversion success/failure behavior.
 - `12_conversion_modes.php`: strict vs native-compatible mode differences.
+- `13_function_access_tuning.php`: blacklist/whitelist function overlays and callback policy.

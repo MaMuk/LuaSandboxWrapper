@@ -61,6 +61,7 @@ $config = SandboxConfig::defaults()
     ->withMemoryLimitBytes(32 * 1024 * 1024)
     ->withCpuLimitSeconds(0.5)
     ->withConversionMode(ConversionMode::STRICT)
+    ->blacklistLuaGlobals(['math.random'])
     ->withOutputSink($sink)
     ->withMaxOutputBytes(64 * 1024);
 
@@ -108,6 +109,28 @@ Included sinks:
 - `BufferedOutputSink`
 
 You can implement `Melmuk\LuaSandboxWrapper\Output\OutputSink` to route print output to logs, queues, etc.
+
+## Function Access Tuning
+
+Default behavior uses a blacklist overlay on top of LuaSandbox defaults.
+
+```php
+<?php
+
+$config = SandboxConfig::defaults()
+    ->blacklistLuaGlobals(['math.random', 'debug.traceback'])
+    ->blacklistLuaLibraries(['os']);
+```
+
+Switch to explicit whitelist mode when you need a strict script contract:
+
+```php
+<?php
+
+$config = SandboxConfig::defaults()
+    ->whitelistLuaGlobals(['pairs', 'ipairs'])
+    ->whitelistLuaLibraries(['string']);
+```
 
 ## Testing
 

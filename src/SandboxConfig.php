@@ -5,6 +5,9 @@ declare(strict_types=1);
 namespace Melmuk\LuaSandboxWrapper;
 
 use Melmuk\LuaSandboxWrapper\Conversion\ConversionMode;
+use Melmuk\LuaSandboxWrapper\FunctionAccess\AccessMode;
+use Melmuk\LuaSandboxWrapper\FunctionAccess\CallbackAccessConfig;
+use Melmuk\LuaSandboxWrapper\FunctionAccess\FunctionAccessConfig;
 use Melmuk\LuaSandboxWrapper\Output\OutputSink;
 use Melmuk\LuaSandboxWrapper\Output\StdoutOutputSink;
 
@@ -26,6 +29,8 @@ final class SandboxConfig
         private readonly bool $enablePrint = true,
         private readonly int $maxOutputBytes = 1024 * 1024,
         private readonly string $conversionMode = ConversionMode::STRICT,
+        private readonly FunctionAccessConfig $functionAccessConfig = new FunctionAccessConfig(),
+        private readonly CallbackAccessConfig $callbackAccessConfig = new CallbackAccessConfig(),
         private readonly OutputSink $outputSink = new StdoutOutputSink(),
     ) {
         if ($memoryLimitBytes !== null && $memoryLimitBytes <= 0) {
@@ -69,6 +74,8 @@ final class SandboxConfig
             $this->enablePrint,
             $this->maxOutputBytes,
             $this->conversionMode,
+            $this->functionAccessConfig,
+            $this->callbackAccessConfig,
             $this->outputSink,
         );
     }
@@ -84,6 +91,8 @@ final class SandboxConfig
             $this->enablePrint,
             $this->maxOutputBytes,
             $this->conversionMode,
+            $this->functionAccessConfig,
+            $this->callbackAccessConfig,
             $this->outputSink,
         );
     }
@@ -99,6 +108,8 @@ final class SandboxConfig
             $enablePrint,
             $this->maxOutputBytes,
             $this->conversionMode,
+            $this->functionAccessConfig,
+            $this->callbackAccessConfig,
             $this->outputSink,
         );
     }
@@ -114,6 +125,8 @@ final class SandboxConfig
             $this->enablePrint,
             $maxOutputBytes,
             $this->conversionMode,
+            $this->functionAccessConfig,
+            $this->callbackAccessConfig,
             $this->outputSink,
         );
     }
@@ -129,8 +142,138 @@ final class SandboxConfig
             $this->enablePrint,
             $this->maxOutputBytes,
             $conversionMode,
+            $this->functionAccessConfig,
+            $this->callbackAccessConfig,
             $this->outputSink,
         );
+    }
+
+    /**
+     * Returns a copy with runtime Lua function access policy.
+     */
+    public function withFunctionAccessConfig(FunctionAccessConfig $functionAccessConfig): self
+    {
+        return new self(
+            $this->memoryLimitBytes,
+            $this->cpuLimitSeconds,
+            $this->enablePrint,
+            $this->maxOutputBytes,
+            $this->conversionMode,
+            $functionAccessConfig,
+            $this->callbackAccessConfig,
+            $this->outputSink,
+        );
+    }
+
+    /**
+     * Returns a copy with PHP callback exposure policy.
+     */
+    public function withCallbackAccessConfig(CallbackAccessConfig $callbackAccessConfig): self
+    {
+        return new self(
+            $this->memoryLimitBytes,
+            $this->cpuLimitSeconds,
+            $this->enablePrint,
+            $this->maxOutputBytes,
+            $this->conversionMode,
+            $this->functionAccessConfig,
+            $callbackAccessConfig,
+            $this->outputSink,
+        );
+    }
+
+    /**
+     * Blacklist-mode helper for removing Lua globals/symbol paths.
+     *
+     * @param array<int, string> $symbols
+     */
+    public function blacklistLuaGlobals(array $symbols): self
+    {
+        $policy = $this->functionAccessConfig
+            ->withMode(AccessMode::BLACKLIST)
+            ->mergeGlobals($symbols);
+
+        return $this->withFunctionAccessConfig($policy);
+    }
+
+    /**
+     * Whitelist-mode helper for keeping only selected Lua globals/symbol paths.
+     *
+     * @param array<int, string> $symbols
+     */
+    public function whitelistLuaGlobals(array $symbols): self
+    {
+        $policy = $this->functionAccessConfig
+            ->withMode(AccessMode::WHITELIST)
+            ->mergeGlobals($symbols);
+
+        return $this->withFunctionAccessConfig($policy);
+    }
+
+    /**
+     * Blacklist-mode helper for removing entire Lua libraries.
+     *
+     * @param array<int, string> $libraries
+     */
+    public function blacklistLuaLibraries(array $libraries): self
+    {
+        $policy = $this->functionAccessConfig
+            ->withMode(AccessMode::BLACKLIST)
+            ->mergeLibraries($libraries);
+
+        return $this->withFunctionAccessConfig($policy);
+    }
+
+    /**
+     * Whitelist-mode helper for keeping only selected Lua libraries.
+     *
+     * @param array<int, string> $libraries
+     */
+    public function whitelistLuaLibraries(array $libraries): self
+    {
+        $policy = $this->functionAccessConfig
+            ->withMode(AccessMode::WHITELIST)
+            ->mergeLibraries($libraries);
+
+        return $this->withFunctionAccessConfig($policy);
+    }
+
+    /**
+     * Rebinds a Lua global/symbol path to a callable callback or Lua expression string.
+     */
+    public function rebindLuaGlobal(string $name, callable|string $target): self
+    {
+        $policy = $this->functionAccessConfig->addRebinding($name, $target);
+
+        return $this->withFunctionAccessConfig($policy);
+    }
+
+    /**
+     * Blacklist-mode helper for denying PHP callback exports.
+     *
+     * @param array<int, string> $callbacks
+     */
+    public function blacklistPhpCallbacks(array $callbacks): self
+    {
+        $policy = $this->callbackAccessConfig
+            ->withMode(AccessMode::BLACKLIST)
+            ->mergeCallbacks($callbacks);
+
+        return $this->withCallbackAccessConfig($policy);
+    }
+
+    /**
+     * Whitelist-mode helper for allowing only selected PHP callback exports.
+     *
+     * @param array<int, string> $callbacks
+     */
+    public function whitelistPhpCallbacks(array $callbacks): self
+    {
+        $policy = $this->callbackAccessConfig
+            ->withMode(AccessMode::WHITELIST)
+            ->mergeCallbacks($callbacks);
+
+        return $this->withCallbackAccessConfig($policy);
     }
 
     /**
@@ -144,6 +287,8 @@ final class SandboxConfig
             $this->enablePrint,
             $this->maxOutputBytes,
             $this->conversionMode,
+            $this->functionAccessConfig,
+            $this->callbackAccessConfig,
             $outputSink,
         );
     }
@@ -186,6 +331,22 @@ final class SandboxConfig
     public function conversionMode(): string
     {
         return $this->conversionMode;
+    }
+
+    /**
+     * Returns the runtime function access overlay config.
+     */
+    public function functionAccessConfig(): FunctionAccessConfig
+    {
+        return $this->functionAccessConfig;
+    }
+
+    /**
+     * Returns the PHP callback access overlay config.
+     */
+    public function callbackAccessConfig(): CallbackAccessConfig
+    {
+        return $this->callbackAccessConfig;
     }
 
     /**
