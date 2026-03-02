@@ -157,3 +157,47 @@ See `/examples`:
 php examples/01_basic_execute.php
 php examples/08_exception_handling.php
 ```
+
+## 9. Expose PHP callbacks as a Lua library
+
+```php
+<?php
+
+use Melmuk\LuaSandboxWrapper\LuaCode;
+use Melmuk\LuaSandboxWrapper\LuaExecutor;
+use Melmuk\LuaSandboxWrapper\SandboxConfig;
+
+$config = SandboxConfig::defaults()
+    ->withPrintEnabled(false)
+    ->withPhpLibrary('calc', [
+        'add' => static fn (int $a, int $b): int => $a + $b,
+    ]);
+
+$executor = new LuaExecutor($config);
+
+$result = $executor->execute([], new LuaCode(<<<'LUA'
+function execute(data)
+    return calc.add(2, 3)
+end
+LUA));
+```
+
+This uses extension `registerLibrary` under the hood and exposes PHP callbacks to Lua.
+
+## 10. Use `wrapPhpFunction(...)` directly
+
+For advanced cases, you can directly access extension wrapping through `LuaExecutor`:
+
+```php
+<?php
+
+use Melmuk\LuaSandboxWrapper\LuaExecutor;
+
+$executor = new LuaExecutor();
+$wrapped = $executor->wrapPhpFunction(
+    static fn (int $a, int $b): int => $a + $b
+);
+
+$result = $wrapped->call(3, 4);
+print_r($result);
+```

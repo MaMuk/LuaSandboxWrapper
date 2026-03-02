@@ -19,3 +19,5 @@ Files:
 - `11_conversion_strictness.php`: strict conversion success/failure behavior.
 - `12_conversion_modes.php`: strict vs native-compatible mode differences.
 - `13_function_access_tuning.php`: blacklist/whitelist function overlays and callback policy.
+- `14_php_library_registration.php`: exposing PHP callbacks as Lua libraries.
+- `15_wrap_php_function.php`: using `LuaExecutor::wrapPhpFunction(...)` directly.

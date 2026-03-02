@@ -22,6 +22,7 @@ final class SandboxConfig
      * @param bool $enablePrint Whether Lua global print should be wired to the output sink.
      * @param int $maxOutputBytes Max bytes captured from Lua print per run. 0 disables limit.
      * @param string $conversionMode strict|native-compatible conversion behavior.
+     * @param array<string, PhpLibraryRegistration> $phpLibraries PHP callback libraries exposed to Lua.
      */
     public function __construct(
         private readonly ?int $memoryLimitBytes = null,
@@ -31,6 +32,7 @@ final class SandboxConfig
         private readonly string $conversionMode = ConversionMode::STRICT,
         private readonly FunctionAccessConfig $functionAccessConfig = new FunctionAccessConfig(),
         private readonly CallbackAccessConfig $callbackAccessConfig = new CallbackAccessConfig(),
+        private readonly array $phpLibraries = [],
         private readonly OutputSink $outputSink = new StdoutOutputSink(),
     ) {
         if ($memoryLimitBytes !== null && $memoryLimitBytes <= 0) {
@@ -52,6 +54,24 @@ final class SandboxConfig
                 ConversionMode::STRICT,
                 ConversionMode::NATIVE_COMPATIBLE,
             ));
+        }
+
+        foreach ($phpLibraries as $library => $registration) {
+            if (!is_string($library)) {
+                throw new \InvalidArgumentException('phpLibraries keys must be library names.');
+            }
+
+            if (!$registration instanceof PhpLibraryRegistration) {
+                throw new \InvalidArgumentException('phpLibraries values must be PhpLibraryRegistration instances.');
+            }
+
+            if ($registration->library() !== $library) {
+                throw new \InvalidArgumentException(sprintf(
+                    'phpLibraries key "%s" must match registration library "%s".',
+                    $library,
+                    $registration->library(),
+                ));
+            }
         }
     }
 
@@ -76,6 +96,7 @@ final class SandboxConfig
             $this->conversionMode,
             $this->functionAccessConfig,
             $this->callbackAccessConfig,
+            $this->phpLibraries,
             $this->outputSink,
         );
     }
@@ -93,6 +114,7 @@ final class SandboxConfig
             $this->conversionMode,
             $this->functionAccessConfig,
             $this->callbackAccessConfig,
+            $this->phpLibraries,
             $this->outputSink,
         );
     }
@@ -110,6 +132,7 @@ final class SandboxConfig
             $this->conversionMode,
             $this->functionAccessConfig,
             $this->callbackAccessConfig,
+            $this->phpLibraries,
             $this->outputSink,
         );
     }
@@ -127,6 +150,7 @@ final class SandboxConfig
             $this->conversionMode,
             $this->functionAccessConfig,
             $this->callbackAccessConfig,
+            $this->phpLibraries,
             $this->outputSink,
         );
     }
@@ -144,6 +168,7 @@ final class SandboxConfig
             $conversionMode,
             $this->functionAccessConfig,
             $this->callbackAccessConfig,
+            $this->phpLibraries,
             $this->outputSink,
         );
     }
@@ -161,6 +186,7 @@ final class SandboxConfig
             $this->conversionMode,
             $functionAccessConfig,
             $this->callbackAccessConfig,
+            $this->phpLibraries,
             $this->outputSink,
         );
     }
@@ -178,6 +204,7 @@ final class SandboxConfig
             $this->conversionMode,
             $this->functionAccessConfig,
             $callbackAccessConfig,
+            $this->phpLibraries,
             $this->outputSink,
         );
     }
@@ -277,6 +304,43 @@ final class SandboxConfig
     }
 
     /**
+     * Registers a Lua library table backed by PHP callbacks.
+     *
+     * @param array<string, callable> $callbacks map: luaFunctionName => php callable
+     */
+    public function withPhpLibrary(string $library, array $callbacks): self
+    {
+        $registration = new PhpLibraryRegistration($library, $callbacks);
+        $libraries = $this->phpLibraries;
+
+        if (isset($libraries[$library])) {
+            $registration = $libraries[$library]->withMergedCallbacks($callbacks);
+        }
+
+        $libraries[$library] = $registration;
+
+        return new self(
+            $this->memoryLimitBytes,
+            $this->cpuLimitSeconds,
+            $this->enablePrint,
+            $this->maxOutputBytes,
+            $this->conversionMode,
+            $this->functionAccessConfig,
+            $this->callbackAccessConfig,
+            $libraries,
+            $this->outputSink,
+        );
+    }
+
+    /**
+     * Registers one PHP callback in a Lua library table.
+     */
+    public function withPhpCallback(string $callbackName, callable $callback, string $library = 'php'): self
+    {
+        return $this->withPhpLibrary($library, [$callbackName => $callback]);
+    }
+
+    /**
      * Returns a copy with a different output sink implementation.
      */
     public function withOutputSink(OutputSink $outputSink): self
@@ -289,6 +353,7 @@ final class SandboxConfig
             $this->conversionMode,
             $this->functionAccessConfig,
             $this->callbackAccessConfig,
+            $this->phpLibraries,
             $outputSink,
         );
     }
@@ -347,6 +412,16 @@ final class SandboxConfig
     public function callbackAccessConfig(): CallbackAccessConfig
     {
         return $this->callbackAccessConfig;
+    }
+
+    /**
+     * Returns all configured PHP library registrations.
+     *
+     * @return array<int, PhpLibraryRegistration>
+     */
+    public function phpLibraries(): array
+    {
+        return array_values($this->phpLibraries);
     }
 
     /**

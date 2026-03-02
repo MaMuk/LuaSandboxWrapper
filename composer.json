@@ -1,6 +1,7 @@
 {
   "name": "melmuk/luasandbox-wrapper",
   "description": "PHP wrapper around the luasandbox extension.",
+  "keywords": ["lua", "sandbox", "luasandbox", "library"],
   "type": "library",
   "license": "ISC",
   "authors": [

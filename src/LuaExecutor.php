@@ -25,7 +25,7 @@ final class LuaExecutor
 {
     private LuaSandbox $sandbox;
     private SandboxConfig $config;
-    private bool $printBootstrapped = false;
+    private bool $callbacksBootstrapped = false;
     private bool $sandboxInjected;
 
     private ?string $currentOutput = null;
@@ -67,7 +67,7 @@ final class LuaExecutor
         if (!$this->sandboxInjected) {
             $this->assertLuaSandboxExtensionAvailable();
             $this->sandbox = new LuaSandbox();
-            $this->printBootstrapped = false;
+            $this->callbacksBootstrapped = false;
             $this->callbackCounter = 0;
         }
 
@@ -101,6 +101,16 @@ final class LuaExecutor
             $this->safeFloatMetric(fn (): float => $this->sandbox->getCPUUsage()),
             $this->safeIntMetric(fn (): int => $this->sandbox->getPeakMemoryUsage()),
         );
+    }
+
+    /**
+     * Wraps a PHP callable into a LuaSandboxFunction using the underlying extension.
+     *
+     * @return object LuaSandboxFunction instance
+     */
+    public function wrapPhpFunction(callable $function): object
+    {
+        return $this->sandbox->wrapPhpFunction($function);
     }
 
     /**
@@ -149,20 +159,20 @@ final class LuaExecutor
      */
     private function bootstrapCallbacksAndPrint(LuaCode $code): array
     {
-        if ($this->printBootstrapped) {
+        if ($this->callbacksBootstrapped) {
             return [];
         }
 
-        $callbacks = [];
+        $libraries = [];
         $callableRebindings = [];
 
         if ($this->config->printEnabled()) {
             $callback = 'php.__wrapper_print';
             $this->assertCallbackAllowed($callback, $code);
 
-            $callbacks['__wrapper_print'] = function (...$args): void {
+            $this->addLibraryCallback($libraries, 'php', '__wrapper_print', function (...$args): void {
                 $this->handleLuaPrint($args);
-            };
+            });
         }
 
         foreach ($this->config->functionAccessConfig()->rebindings() as $symbol => $target) {
@@ -175,25 +185,49 @@ final class LuaExecutor
             $callbackPath = 'php.' . $callbackName;
             $this->assertCallbackAllowed($callbackPath, $code);
 
-            $callbacks[$callbackName] = $target;
+            $this->addLibraryCallback($libraries, 'php', $callbackName, $target);
             $callableRebindings[$symbol] = $callbackPath;
         }
 
+        foreach ($this->config->phpLibraries() as $registration) {
+            foreach ($registration->callbacks() as $name => $callback) {
+                $callbackPath = $registration->library() . '.' . $name;
+                $this->assertCallbackAllowed($callbackPath, $code);
+                $this->addLibraryCallback($libraries, $registration->library(), $name, $callback);
+            }
+        }
+
         try {
-            if ($callbacks !== []) {
-                $this->sandbox->registerLibrary('php', $this->wrapPhpCallbacks($callbacks));
+            foreach ($libraries as $library => $callbacks) {
+                $this->sandbox->registerLibrary($library, $this->wrapPhpCallbacks($callbacks));
             }
 
             if ($this->config->printEnabled()) {
                 $this->sandbox->loadString('print = php.__wrapper_print')->call();
             }
         } catch (\Throwable $exception) {
-            throw $this->mapException($exception, $code, 'bootstrap-print');
+            throw $this->mapException($exception, $code, 'bootstrap-callbacks');
         }
 
-        $this->printBootstrapped = true;
+        $this->callbacksBootstrapped = true;
 
         return $callableRebindings;
+    }
+
+    /**
+     * @param array<string, array<string, callable>> $libraries
+     */
+    private function addLibraryCallback(array &$libraries, string $library, string $name, callable $callback): void
+    {
+        if (isset($libraries[$library][$name])) {
+            throw new \InvalidArgumentException(sprintf(
+                'Duplicate callback registration for "%s.%s".',
+                $library,
+                $name,
+            ));
+        }
+
+        $libraries[$library][$name] = $callback;
     }
 
     /**
@@ -465,22 +499,27 @@ LUA;
         $wrapped = [];
 
         foreach ($callbacks as $name => $callback) {
-            $wrapped[$name] = static function (...$args) use ($callback): array {
-                $result = $callback(...$args);
-
-                if ($result === null) {
-                    return [];
-                }
-
-                if (is_array($result)) {
-                    return $result;
-                }
-
-                return [$result];
-            };
+            $wrapped[$name] = $this->normalizePhpCallbackReturnShape($callback);
         }
 
         return $wrapped;
+    }
+
+    private function normalizePhpCallbackReturnShape(callable $callback): callable
+    {
+        return static function (...$args) use ($callback): array {
+            $result = $callback(...$args);
+
+            if ($result === null) {
+                return [];
+            }
+
+            if (is_array($result)) {
+                return $result;
+            }
+
+            return [$result];
+        };
     }
 
     /**

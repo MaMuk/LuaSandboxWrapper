@@ -47,6 +47,15 @@ LUA);
         self::assertGreaterThanOrEqual(0.0, $result->durationMs());
     }
 
+    public function testWrapPhpFunctionIsExposedPublicly(): void
+    {
+        $executor = new LuaExecutor(SandboxConfig::defaults()->withOutputSink(new BufferedOutputSink()));
+        $wrapped = $executor->wrapPhpFunction(static fn (int $a, int $b): int => $a + $b);
+
+        self::assertIsObject($wrapped);
+        self::assertTrue(method_exists($wrapped, 'call'));
+    }
+
     public function testBlacklistCanDisableSpecificGlobalFunction(): void
     {
         $executor = new LuaExecutor(
@@ -119,6 +128,141 @@ LUA)
         );
 
         self::assertSame(['value' => 5], $result);
+    }
+
+    public function testRegisteredPhpLibraryCanBeCalledFromLua(): void
+    {
+        $executor = new LuaExecutor(
+            SandboxConfig::defaults()
+                ->withPrintEnabled(false)
+                ->withPhpLibrary('calc', ['add' => static fn (int $a, int $b): int => $a + $b])
+                ->withOutputSink(new BufferedOutputSink())
+        );
+
+        $result = $executor->execute(
+            [],
+            new LuaCode(<<<'LUA'
+function execute(data)
+    return { value = calc.add(2, 3) }
+end
+LUA)
+        );
+
+        self::assertSame(['value' => 5], $result);
+    }
+
+    public function testCanRegisterMultiplePhpLibrariesInOneRun(): void
+    {
+        $executor = new LuaExecutor(
+            SandboxConfig::defaults()
+                ->withPrintEnabled(false)
+                ->withPhpLibrary('calc', ['add' => static fn (int $a, int $b): int => $a + $b])
+                ->withPhpLibrary('textx', ['join' => static fn (string $a, string $b): string => $a . $b])
+                ->withOutputSink(new BufferedOutputSink())
+        );
+
+        $result = $executor->execute(
+            [],
+            new LuaCode(<<<'LUA'
+function execute(data)
+    return { sum = calc.add(4, 6), joined = textx.join("ab", "cd") }
+end
+LUA)
+        );
+
+        self::assertSame(['sum' => 10, 'joined' => 'abcd'], $result);
+    }
+
+    public function testCallbackPolicyCanBlockRegisteredLibraryCallback(): void
+    {
+        $executor = new LuaExecutor(
+            SandboxConfig::defaults()
+                ->withPrintEnabled(false)
+                ->withPhpLibrary('calc', ['add' => static fn (int $a, int $b): int => $a + $b])
+                ->whitelistPhpCallbacks([])
+                ->withOutputSink(new BufferedOutputSink())
+        );
+
+        try {
+            $executor->execute([], new LuaCode('function execute(data) return data end'));
+            self::fail('Expected FunctionAccessViolationException to be thrown.');
+        } catch (FunctionAccessViolationException $exception) {
+            self::assertSame('calc.add', $exception->symbol());
+            self::assertSame('php-callback', $exception->source());
+            self::assertSame('whitelist', $exception->mode());
+            self::assertSame('callback-policy', $exception->phase());
+            self::assertSame('execute', $exception->functionName());
+        }
+    }
+
+    public function testPerRunSandboxReappliesPhpLibraryRegistration(): void
+    {
+        $executor = new LuaExecutor(
+            SandboxConfig::defaults()
+                ->withPrintEnabled(false)
+                ->withPhpLibrary('calc', ['add' => static fn (int $a, int $b): int => $a + $b])
+                ->withOutputSink(new BufferedOutputSink())
+        );
+
+        $code = new LuaCode(<<<'LUA'
+function execute(data)
+    return calc.add(data.a, data.b)
+end
+LUA);
+
+        self::assertSame(3, $executor->execute(['a' => 1, 'b' => 2], $code));
+        self::assertSame(7, $executor->execute(['a' => 3, 'b' => 4], $code));
+    }
+
+    public function testInjectedSandboxRetainsPhpLibraryRegistrationAcrossCalls(): void
+    {
+        $executor = new LuaExecutor(
+            SandboxConfig::defaults()
+                ->withPrintEnabled(false)
+                ->withPhpLibrary('calc', ['add' => static fn (int $a, int $b): int => $a + $b])
+                ->withOutputSink(new BufferedOutputSink()),
+            new \LuaSandbox(),
+        );
+
+        $code = new LuaCode(<<<'LUA'
+function execute(data)
+    return calc.add(data.a, data.b)
+end
+LUA);
+
+        self::assertSame(3, $executor->execute(['a' => 1, 'b' => 2], $code));
+        self::assertSame(9, $executor->execute(['a' => 4, 'b' => 5], $code));
+    }
+
+    public function testRegisteredCallbacksAreWrappedForLuaReturnShape(): void
+    {
+        $executor = new LuaExecutor(
+            SandboxConfig::defaults()
+                ->withPrintEnabled(false)
+                ->withPhpLibrary('ret', [
+                    'scalar' => static fn (): int => 7,
+                    'none' => static fn () => null,
+                    'multi' => static fn (): array => [1, 2],
+                ])
+                ->withOutputSink(new BufferedOutputSink())
+        );
+
+        $result = $executor->execute(
+            [],
+            new LuaCode(<<<'LUA'
+function execute(data)
+    local x = ret.scalar()
+    local is_nil = (ret.none() == nil)
+    local a, b = ret.multi()
+    return { x = x, is_nil = is_nil, a = a, b = b }
+end
+LUA)
+        );
+
+        self::assertSame(7, $result['x']);
+        self::assertTrue($result['is_nil']);
+        self::assertSame(1, $result['a']);
+        self::assertSame(2, $result['b']);
     }
 
     public function testPhpListIsConvertedToLuaSequenceForIpairs(): void

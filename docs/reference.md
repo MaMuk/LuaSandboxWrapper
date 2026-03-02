@@ -10,6 +10,7 @@ Core classes:
 - `LuaExecutor`
 - `LuaCode`
 - `SandboxConfig`
+- `PhpLibraryRegistration`
 - `ExecutionResult`
 - `Conversion\ConversionMode`
 - `Conversion\TableShapeConverter`
@@ -72,6 +73,11 @@ public function run(array $data, LuaCode $code): ExecutionResult
 Behavior:
 - Applies configured memory/CPU limits.
 - Bootstraps Lua `print` to configured `OutputSink`.
+- Registers configured PHP callback libraries via `registerLibrary(...)`.
+- Normalizes callback return values before registration:
+  - `null` return => no Lua return values
+  - scalar/object return => one Lua return value
+  - array return => passed through as-is
 - Compiles and executes Lua chunk.
 - Resolves function by name from `LuaCode`.
 - Calls resolved function with `$data`.
@@ -87,6 +93,16 @@ Throws:
 - `LuaFunctionNotFoundException`
 - `OutputLimitExceededException`
 - `LuaExecutionException` (base)
+
+### `wrapPhpFunction(...)`
+
+```php
+public function wrapPhpFunction(callable $function): object
+```
+
+Behavior:
+- Calls extension `LuaSandbox::wrapPhpFunction(...)` on the underlying sandbox.
+- Returns a `LuaSandboxFunction` object.
 
 ## `LuaCode`
 
@@ -142,6 +158,7 @@ public function __construct(
     string $conversionMode = ConversionMode::STRICT,
     FunctionAccessConfig $functionAccessConfig = new FunctionAccessConfig(),
     CallbackAccessConfig $callbackAccessConfig = new CallbackAccessConfig(),
+    array $phpLibraries = [],
     OutputSink $outputSink = new StdoutOutputSink(),
 )
 ```
@@ -169,6 +186,8 @@ public function withMaxOutputBytes(int $maxOutputBytes): self
 public function withConversionMode(string $conversionMode): self
 public function withFunctionAccessConfig(FunctionAccessConfig $functionAccessConfig): self
 public function withCallbackAccessConfig(CallbackAccessConfig $callbackAccessConfig): self
+public function withPhpLibrary(string $library, array $callbacks): self
+public function withPhpCallback(string $callbackName, callable $callback, string $library = 'php'): self
 public function withOutputSink(OutputSink $outputSink): self
 ```
 
@@ -194,8 +213,12 @@ public function maxOutputBytes(): int
 public function conversionMode(): string
 public function functionAccessConfig(): FunctionAccessConfig
 public function callbackAccessConfig(): CallbackAccessConfig
+public function phpLibraries(): array
 public function outputSink(): OutputSink
 ```
+
+`withPhpLibrary(...)` exposes PHP callables to Lua through `LuaSandbox::registerLibrary(...)`.
+It does not declare Lua-script functions.
 
 ## `ExecutionResult`
 

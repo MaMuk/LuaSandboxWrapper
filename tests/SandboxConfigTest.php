@@ -25,6 +25,7 @@ final class SandboxConfigTest extends TestCase
             ->blacklistLuaGlobals(['math.random'])
             ->blacklistLuaLibraries(['debug'])
             ->blacklistPhpCallbacks(['php.secret'])
+            ->withPhpLibrary('calc', ['add' => static fn (int $a, int $b): int => $a + $b])
             ->withOutputSink($sink);
 
         self::assertSame(8 * 1024 * 1024, $config->memoryLimitBytes());
@@ -37,6 +38,9 @@ final class SandboxConfigTest extends TestCase
         self::assertSame(['debug'], $config->functionAccessConfig()->libraries());
         self::assertSame(AccessMode::BLACKLIST, $config->callbackAccessConfig()->mode());
         self::assertSame(['php.secret'], $config->callbackAccessConfig()->callbacks());
+        self::assertCount(1, $config->phpLibraries());
+        self::assertSame('calc', $config->phpLibraries()[0]->library());
+        self::assertSame(7, ($config->phpLibraries()[0]->callbacks()['add'])(3, 4));
         self::assertSame($sink, $config->outputSink());
     }
 
@@ -64,5 +68,47 @@ final class SandboxConfigTest extends TestCase
     {
         $this->expectException(\InvalidArgumentException::class);
         SandboxConfig::defaults()->withConversionMode('bad-mode');
+    }
+
+    public function testWithPhpLibraryMergesAndOverridesCallbacks(): void
+    {
+        $config = SandboxConfig::defaults()
+            ->withPhpLibrary('calc', [
+                'add' => static fn (int $a, int $b): int => $a + $b,
+                'mul' => static fn (int $a, int $b): int => $a * $b,
+            ])
+            ->withPhpLibrary('calc', [
+                'add' => static fn (int $a, int $b): int => $a - $b,
+            ]);
+
+        $callbacks = $config->phpLibraries()[0]->callbacks();
+
+        self::assertSame(['add', 'mul'], array_keys($callbacks));
+        self::assertSame(2, $callbacks['add'](5, 3));
+        self::assertSame(15, $callbacks['mul'](5, 3));
+    }
+
+    public function testWithPhpCallbackUsesDefaultPhpLibrary(): void
+    {
+        $config = SandboxConfig::defaults()
+            ->withPhpCallback('sum', static fn (int $a, int $b): int => $a + $b);
+
+        self::assertCount(1, $config->phpLibraries());
+        self::assertSame('php', $config->phpLibraries()[0]->library());
+        self::assertSame(3, ($config->phpLibraries()[0]->callbacks()['sum'])(1, 2));
+    }
+
+    public function testInvalidPhpLibraryIdentifierThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        SandboxConfig::defaults()->withPhpLibrary('bad-name', ['sum' => static fn (): int => 1]);
+    }
+
+    public function testInvalidPhpCallbackDefinitionThrows(): void
+    {
+        $this->expectException(\InvalidArgumentException::class);
+
+        SandboxConfig::defaults()->withPhpLibrary('calc', ['sum' => 'not-a-callable']);
     }
 }

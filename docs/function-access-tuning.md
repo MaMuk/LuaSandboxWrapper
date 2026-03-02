@@ -143,7 +143,6 @@ Most users should prefer the `SandboxConfig` helper methods.
 
 ## Related docs
 
-- `docs/differences-from-standard-lua.txt`
 - `docs/quickstart.md`
 - `docs/reference.md`
 - `examples/13_function_access_tuning.php`
